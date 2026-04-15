@@ -9,7 +9,9 @@ import { Configuration, PublicClientApplication } from "@azure/msal-browser";
 export async function fetchMsalConfig(): Promise<PublicClientApplication> {
   const res = await fetch("/api/auth/config");
   if (!res.ok) {
-    throw new Error("Failed to fetch MSAL configuration from server");
+    throw new Error(
+      `Failed to fetch MSAL configuration: ${res.status} ${res.statusText}`
+    );
   }
 
   const { clientId, authority, redirectUri } = await res.json();
