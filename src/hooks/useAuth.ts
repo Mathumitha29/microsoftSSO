@@ -1,90 +1,61 @@
-"use client";
-
+import { useMsal, useIsAuthenticated } from "@azure/msal-react";
+import jwtDecode from "jwt-decode";
 import { useState, useEffect } from "react";
-import { useMsal } from "@azure/msal-react";
-import { jwtDecode } from "jwt-decode";
-import { loginRequest } from "@/lib/msalConfig";
 
-export interface DecodedToken {
-  name?: string;
-  preferred_username?: string;
-  oid?: string;
-  roles?: string[];
-  exp?: number;
-  [key: string]: unknown;
+interface DecodedToken {
+  name: string;
+  preferred_username: string;
+  oid: string;
+  roles: string[];
+  exp: number;
 }
 
-export function useAuth() {
+export const useAuth = () => {
   const { instance, accounts } = useMsal();
-  const account = accounts[0] ?? null;
-  const isAuthenticated = accounts.length > 0;
-
+  const isAuthenticated = useIsAuthenticated();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [decodedToken, setDecodedToken] = useState<DecodedToken | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!account) {
-      setAccessToken(null);
-      setDecodedToken(null);
-      return;
-    }
+    const getAccessToken = async () => {
+      setLoading(true);
+      try {
+        const response = await instance.acquireTokenSilent({ scopes: ["openid", "profile", "User.Read"] });
+        setAccessToken(response.accessToken);
+        const decoded = jwtDecode<DecodedToken>(response.accessToken);
+        setDecodedToken(decoded);
+      } catch (err) {
+        setError(err.message);
+        // Fall back to popup if silent token acquisition fails
+        try {
+          const response = await instance.acquireTokenPopup({ scopes: ["openid", "profile", "User.Read"] });
+          setAccessToken(response.accessToken);
+          const decoded = jwtDecode<DecodedToken>(response.accessToken);
+          setDecodedToken(decoded);
+        } catch (popupErr) {
+          setError(popupErr.message);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    instance
-      .acquireTokenSilent({ ...loginRequest, account })
-      .then((response) => {
-        const token = response.accessToken;
-        setAccessToken(token);
-        setDecodedToken(jwtDecode<DecodedToken>(token));
-        setError(null);
-      })
-      .catch(() => {
-        // Silent acquisition failed – fall back to popup
-        instance
-          .acquireTokenPopup({ ...loginRequest, account })
-          .then((response) => {
-            const token = response.accessToken;
-            setAccessToken(token);
-            setDecodedToken(jwtDecode<DecodedToken>(token));
-            setError(null);
-          })
-          .catch((err: unknown) => {
-            const message =
-              err instanceof Error ? err.message : "Token acquisition failed";
-            setError(message);
-          });
-      });
-  }, [instance, account]);
-
-  const login = async () => {
-    try {
-      await instance.loginPopup(loginRequest);
-      setError(null);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Login failed";
-      setError(message);
+    if (isAuthenticated) {
+      getAccessToken();
+    } else {
+      setLoading(false);
     }
+  }, [isAuthenticated, instance]);
+
+  const login = () => {
+    instance.loginPopup();
   };
 
-  const logout = async () => {
-    try {
-      await instance.logoutPopup();
-      setAccessToken(null);
-      setDecodedToken(null);
-      setError(null);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Logout failed";
-      setError(message);
-    }
+  const logout = () => {
+    instance.logoutPopup();
   };
 
-  return {
-    login,
-    logout,
-    account,
-    isAuthenticated,
-    accessToken,
-    decodedToken,
-    error,
-  };
-}
+  return { account: accounts[0], isAuthenticated, accessToken, decodedToken, loading, error, login, logout };
+};

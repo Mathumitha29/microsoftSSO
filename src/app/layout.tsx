@@ -1,22 +1,7 @@
 import type { Metadata } from "next";
-import { Providers } from "./providers";
 import "./globals.css";
-
-export const metadata: Metadata = {
-  title: "Microsoft SSO Demo",
-  description: "Next.js 16 App with MSAL SSO Login and Access Token Decoding",
-};
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <html lang="en">
-      <body>
-        <Providers>{children}</Providers>
-      </body>
-    </html>
-  );
+import { Providers } from "./providers";
+export const metadata: Metadata = { title: "Microsoft SSO - Next.js 16", description: "Next.js 16 app with MSAL SSO and JWT token decoding" };
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (<html lang="en"><body><Providers>{children}</Providers></body></html>);
 }
