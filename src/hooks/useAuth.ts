@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useMsal } from "@azure/msal-react";
-import { AccountInfo, InteractionRequiredAuthError } from "@azure/msal-browser";
+import { AccountInfo, InteractionRequiredAuthError, EventType, AuthenticationResult } from "@azure/msal-browser";
 
 interface DecodedClaims {
   name?: string;
@@ -16,8 +16,8 @@ interface UseAuthReturn {
   account: AccountInfo | null;
   claims: DecodedClaims | null;
   isAuthenticated: boolean;
-  login: () => Promise<void>;
-  logout: () => Promise<void>;
+  login: () => void;
+  logout: () => void;
   acquireTokenAndDecode: () => Promise<void>;
   error: string | null;
 }
@@ -29,25 +29,51 @@ export function useAuth(): UseAuthReturn {
   const [claims, setClaims] = useState<DecodedClaims | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const login = useCallback(async () => {
-    try {
-      setError(null);
-      await instance.loginPopup({
-        scopes: ["User.Read"],
+  // Handle redirect response on page load
+  useEffect(() => {
+    instance.handleRedirectPromise()
+      .then((response: AuthenticationResult | null) => {
+        if (response) {
+          // User just logged in via redirect
+          instance.setActiveAccount(response.account);
+        }
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Redirect handling failed");
       });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
-    }
   }, [instance]);
 
-  const logout = useCallback(async () => {
-    try {
-      setError(null);
-      setClaims(null);
-      await instance.logoutPopup();
-    } catch (err) {
+  // Listen for login success events
+  useEffect(() => {
+    const callbackId = instance.addEventCallback((event) => {
+      if (event.eventType === EventType.LOGIN_SUCCESS && event.payload) {
+        const payload = event.payload as AuthenticationResult;
+        instance.setActiveAccount(payload.account);
+      }
+    });
+
+    return () => {
+      if (callbackId) {
+        instance.removeEventCallback(callbackId);
+      }
+    };
+  }, [instance]);
+
+  const login = useCallback(() => {
+    setError(null);
+    instance.loginRedirect({
+      scopes: ["User.Read"],
+    }).catch((err) => {
+      setError(err instanceof Error ? err.message : "Login failed");
+    });
+  }, [instance]);
+
+  const logout = useCallback(() => {
+    setError(null);
+    setClaims(null);
+    instance.logoutRedirect().catch((err) => {
       setError(err instanceof Error ? err.message : "Logout failed");
-    }
+    });
   }, [instance]);
 
   const acquireTokenAndDecode = useCallback(async () => {
@@ -66,10 +92,12 @@ export function useAuth(): UseAuthReturn {
         });
       } catch (silentError) {
         if (silentError instanceof InteractionRequiredAuthError) {
-          tokenResponse = await instance.acquireTokenPopup({
+          // Use redirect instead of popup
+          instance.acquireTokenRedirect({
             scopes: ["User.Read"],
             account,
           });
+          return; // Will redirect, so exit here
         } else {
           throw silentError;
         }

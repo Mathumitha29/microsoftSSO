@@ -21,6 +21,7 @@ export async function fetchMsalConfig(): Promise<PublicClientApplication> {
       clientId,
       authority,
       redirectUri,
+      postLogoutRedirectUri: redirectUri,
     },
     cache: {
       cacheLocation: "sessionStorage",
